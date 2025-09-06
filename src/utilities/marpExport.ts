@@ -6,7 +6,7 @@ import { promises as fs } from "fs";
 import * as os from "os";
 import * as path from "path";
 
-export class MarpCLIError extends Error {}
+export class MarpCLIError extends Error { }
 
 export class MarpExport {
 	private settings: MarpSlidesSettings;
@@ -25,23 +25,26 @@ export class MarpExport {
 		const marpEngineConfig = filesTool.getMarpEngine(file.vault);
 
 		if (completeFilePath != "") {
-			console.log("元のファイルパス:", completeFilePath);
-
 			// 元のmdファイルの内容を読み込む
 			let content;
 			try {
 				content = await fs.readFile(completeFilePath, "utf8");
-				console.log("元のファイルの読み込み成功");
 			} catch (err) {
 				console.error("元のファイルの読み込みに失敗しました:", err);
 				throw err;
 			}
 
-			// [[文字列]] を 文字列 に置換
-			const processedContent = content.replace(/\[\[(.*?)\]\]/g, "$1");
+			// 一時ディレクトリを作成
+			const tempDir = path.join(os.tmpdir(), `marp_${Date.now()}`);
+			await fs.mkdir(tempDir, { recursive: true });
+			
+			// 画像を処理（エクスポートタイプを渡す）
+			let processedContent = await this.processImages(content, file, tempDir, type);
+			
+			// [[文字列]] を 文字列 に置換（画像以外のwikilink）
+			processedContent = processedContent.replace(/\[\[([^\]]+)\]\]/g, "$1");
 
 			// 一時ファイルのパスを作成
-			const tempDir = os.tmpdir();
 			const tempFileName = `temp_${file.basename}_${Date.now()}.md`;
 			const tempFilePath = path.join(tempDir, tempFileName);
 
@@ -55,12 +58,12 @@ export class MarpExport {
 			// 	tempFileName
 			// );
 
-			console.log("一時ファイルパス:", tempFilePath);
+			// console.log("一時ファイルパス:", tempFilePath);
 
 			// 処理された内容を一時ファイルに書き込む
 			try {
 				await fs.writeFile(tempFilePath, processedContent);
-				console.log("一時ファイルの書き込み成功");
+				// console.log("一時ファイルの書き込み成功");
 			} catch (err) {
 				console.error("一時ファイルの書き込みに失敗しました:", err);
 				throw err;
@@ -69,7 +72,7 @@ export class MarpExport {
 			// 一時ファイルの存在を確認
 			try {
 				await fs.access(tempFilePath);
-				console.log("一時ファイルが存在します");
+				// console.log("一時ファイルが存在します");
 			} catch (err) {
 				console.error("一時ファイルが存在しません:", err);
 				throw err;
@@ -88,31 +91,45 @@ export class MarpExport {
 				argv.push(themePath);
 			}
 
+			const originalDir = path.dirname(completeFilePath);
+
 			switch (type) {
 				case "pdf":
 					argv.push("--pdf");
+					argv.push("-o");
 					if (this.settings.EXPORT_PATH != "") {
-						argv.push("-o");
 						argv.push(
 							`${this.settings.EXPORT_PATH}${file.basename}.pdf`
+						);
+					} else {
+						argv.push(
+							path.join(originalDir, `${file.basename}.pdf`)
 						);
 					}
 					break;
 				case "pptx":
 					argv.push("--pptx");
+					argv.push("-o");
 					if (this.settings.EXPORT_PATH != "") {
-						argv.push("-o");
 						argv.push(
 							`${this.settings.EXPORT_PATH}${file.basename}.pptx`
+						);
+					} else {
+						argv.push(
+							path.join(originalDir, `${file.basename}.pptx`)
 						);
 					}
 					break;
 				case "html":
 					argv.push("--html");
+					argv.push("-o");
 					if (this.settings.EXPORT_PATH != "") {
-						argv.push("-o");
 						argv.push(
 							`${this.settings.EXPORT_PATH}${file.basename}.html`
+						);
+					} else {
+						argv.push(
+							path.join(originalDir, `${file.basename}.html`)
 						);
 					}
 					break;
@@ -122,7 +139,7 @@ export class MarpExport {
 				// 他のケースも同様に処理
 			}
 
-			console.log("Marp コマンド引数:", argv);
+			// console.log("Marp コマンド引数:", argv);
 
 			// カレントディレクトリを設定
 			// const cwd = path.dirname(tempFilePath);
@@ -130,7 +147,7 @@ export class MarpExport {
 			// this.run メソッドに cwd を渡せるように修正
 			try {
 				await this.run(argv, resourcesPath);
-				console.log("Marp のエクスポート処理が完了しました");
+				// console.log("Marp のエクスポート処理が完了しました");
 			} catch (err) {
 				console.error("Marp のエクスポート処理に失敗しました:", err);
 				throw err;
@@ -209,5 +226,150 @@ export class MarpExport {
 		}
 
 		__dirname = temp__dirname;
+	}
+
+	private async processImages(content: string, file: TFile, tempDir: string, exportType: string): Promise<string> {
+		// Obsidianのattachment設定を取得
+		const attachmentPath = (file.vault as any).config?.attachmentFolderPath || "";
+		
+		// vaultPathを正しく取得する
+		let vaultPath = "";
+		try {
+			// 複数の方法でvaultパスを取得
+			const adapter = file.vault.adapter as any;
+			const app = (file.vault as any).app;
+			
+			// 方法1: adapter.basePath
+			if (typeof adapter.basePath === 'string') {
+				vaultPath = adapter.basePath;
+			}
+			// 方法2: configDirから推測
+			else if (app && app.vault && typeof app.vault.configDir === 'string') {
+				vaultPath = app.vault.configDir.replace('/.obsidian', '');
+			}
+			// 方法3: その他の方法でvaultパスを取得
+			else {
+				// 最後の手段: 環境から推測（この方法は環境に依存する）
+				console.warn("Could not determine vault path automatically");
+			}
+		} catch (err) {
+			console.error("Error getting vault path:", err);
+		}
+		
+		// vaultPathが空の場合のフォールバック
+		if (!vaultPath) {
+			console.warn("vaultPath is empty, skipping image processing");
+			return content;
+		}
+		
+		// 4つの画像パターンに対応する正規表現
+		const imagePatterns = [
+			// ![[image.jpg]] パターン
+			{
+				regex: /!\[\[([^[\]]*\.(jpg|jpeg|png|gif|svg|webp|bmp|JPG|JPEG|PNG|GIF|SVG|WEBP|BMP))\]\]/gi,
+				type: 'wikilink'
+			},
+			// ![](image.jpg) パターン
+			{
+				regex: /!\[([^\]]*)\]\(([^)]*\.(jpg|jpeg|png|gif|svg|webp|bmp|JPG|JPEG|PNG|GIF|SVG|WEBP|BMP))\)/gi,
+				type: 'markdown'
+			}
+		];
+
+		let processedContent = content;
+
+		for (const pattern of imagePatterns) {
+			let match;
+			while ((match = pattern.regex.exec(content)) !== null) {
+				const originalMatch = match[0];
+				let imagePath = pattern.type === 'wikilink' ? match[1] : match[2];
+				const altText = pattern.type === 'wikilink' ? '' : match[1];
+
+				// 画像ファイルを探す
+				const imageFile = await this.findImageFile(imagePath, file, attachmentPath, vaultPath);
+				
+				if (imageFile) {
+					let finalImagePath: string;
+					
+					if (exportType === "html") {
+						// HTML の場合は attachmentPath を含めた相対パスを使用
+						if (attachmentPath && !imagePath.startsWith(attachmentPath)) {
+							finalImagePath = path.join(attachmentPath, path.basename(imageFile)).replace(/\\/g, '/');
+						} else {
+							finalImagePath = imagePath;
+						}
+						// HTMLエクスポートでは画像はコピーしない（元の場所を参照）
+						const newImageRef = `![${altText}](${finalImagePath})`;
+						processedContent = processedContent.replace(originalMatch, newImageRef);
+					} else {
+						// PDF, PPTX, PNG などの場合は temp directory にコピー
+						const tempImagePath = path.join(tempDir, path.basename(imageFile));
+						try {
+							await fs.copyFile(imageFile, tempImagePath);
+							
+							// マークダウンの標準形式に統一（ファイル名のみ）
+							const newImageRef = `![${altText}](${path.basename(imageFile)})`;
+							processedContent = processedContent.replace(originalMatch, newImageRef);
+						} catch (err) {
+							console.error(`画像のコピーに失敗しました: ${imageFile}`, err);
+						}
+					}
+				} else {
+					console.warn(`画像が見つかりません: ${imagePath}`);
+				}
+			}
+		}
+
+		return processedContent;
+	}
+
+	private async findImageFile(imagePath: string, file: TFile, attachmentPath: string, vaultPath: string): Promise<string | null> {
+		// 引数の型チェック
+		if (!vaultPath || typeof vaultPath !== 'string') {
+			console.warn("vaultPath is invalid:", vaultPath);
+			return null;
+		}
+		
+		if (!file.path || typeof file.path !== 'string') {
+			console.warn("file.path is invalid:", file.path);
+			return null;
+		}
+
+		// 安全にパスを構築
+		const searchPaths: string[] = [];
+		
+		try {
+			// 1. 絶対パス (Archived/Attachments/image.jpg)
+			searchPaths.push(path.resolve(vaultPath, imagePath));
+			
+			// 2. ファイル名のみ (image.jpg) の場合、attachment フォルダを探す
+			if (attachmentPath && typeof attachmentPath === 'string') {
+				searchPaths.push(path.resolve(vaultPath, attachmentPath, path.basename(imagePath)));
+			}
+			
+			// 3. 現在のファイルと同じディレクトリ
+			const currentFileDir = path.dirname(path.resolve(vaultPath, file.path));
+			searchPaths.push(path.resolve(currentFileDir, imagePath));
+			
+			// 4. デフォルトのAttachmentsフォルダ
+			searchPaths.push(path.resolve(vaultPath, "Attachments", path.basename(imagePath)));
+			
+			// 5. ArchivedのAttachmentsフォルダ
+			searchPaths.push(path.resolve(vaultPath, "Archived", "Attachments", path.basename(imagePath)));
+		} catch (err) {
+			console.error("Error building search paths:", err);
+			return null;
+		}
+
+		for (const searchPath of searchPaths) {
+			try {
+				await fs.access(searchPath);
+				return searchPath;
+			} catch {
+				// ファイルが存在しない場合は次のパスを試す
+			}
+		}
+
+		return null;
 	}
 }

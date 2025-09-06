@@ -131,8 +131,13 @@ export default class MarpSlides extends Plugin {
 			// エディタのコンテンツを取得
 			const content = this.editorView.getViewData();
 
-			// [[...]]で囲まれた文字列を中身だけに置換
-			const replacedContent = content.replace(/\[\[(.*?)\]\]/g, "$1");
+			// [[...]]で囲まれた文字列を中身だけに置換（画像以外）
+			// ![[...]]は画像なので置換しない - 互換性のある方法で処理
+			let replacedContent = content;
+			// 画像以外のwikilinkのみを置換
+			replacedContent = replacedContent.replace(/([^!]|^)\[\[([^\]]+)\]\]/g, (match, before, wikitext) => {
+				return before + wikitext;
+			});
 
 			// 置換後のコンテンツをスライドビューに表示
 			this.slidesView.displaySlidesWithContent(
@@ -160,8 +165,13 @@ export default class MarpSlides extends Plugin {
 		// エディタのコンテンツを取得
 		const content = this.editorView.getViewData();
 
-		// [[...]]で囲まれた文字列を中身だけに置換
-		const replacedContent = content.replace(/\[\[(.*?)\]\]/g, "$1");
+		// [[...]]で囲まれた文字列を中身だけに置換（画像以外）
+		// ![[...]]は画像なので置換しない - 互換性のある方法で処理
+		let replacedContent = content;
+		// 画像以外のwikilinkのみを置換
+		replacedContent = replacedContent.replace(/([^!]|^)\[\[([^\]]+)\]\]/g, (match, before, wikitext) => {
+			return before + wikitext;
+		});
 
 		// replacedContent が文字列であることを確認
 		if (typeof replacedContent !== "string") {
