@@ -114,7 +114,7 @@ export class MarpPreviewView extends ItemView {
 
 	async onLineChanged(line: number) {
 		try {
-			this.containerEl.children[1].children[2].children[
+			this.containerEl.children[1].children[1].children[
 				line
 			].scrollIntoView();
 		} catch {

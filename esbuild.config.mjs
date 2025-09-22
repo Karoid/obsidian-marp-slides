@@ -38,11 +38,12 @@ const context = await esbuild.context({
 	],
 	format: "cjs",
 	target: "es2018",
+	platform: "node",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile:
-		"/Users/rchujo/Library/Mobile Documents/iCloud~md~obsidian/Documents/rchujo/.obsidian/plugins/marp-slides/main.js", //for local dev!!!
+		"/mnt/c/Users/mewpo/Obsidian/Kevin Notes/Kevin Notes/.obsidian/plugins/marp-slides/main.js", //for local dev!!!
 	// outfile: "main.js",
 });
 
